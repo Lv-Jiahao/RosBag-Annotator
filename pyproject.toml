@@ -1,0 +1,31 @@
+[build-system]
+requires      = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name        = "rosbag-annotator"
+version     = "1.0.0"
+description = "RosBag segmentation & VLA task annotation tool"
+readme      = "README.md"
+requires-python = ">=3.10"
+license     = { text = "MIT" }
+
+dependencies = [
+    "PyQt6>=6.5",
+    "pyyaml>=6.0",
+    "numpy>=1.24",
+    "opencv-python>=4.8",
+]
+
+[project.optional-dependencies]
+ros = [
+    # Install these inside your ROS 2 environment, not via pip
+    # rosbag2_py, rclpy, sensor_msgs
+]
+
+[project.scripts]
+rosbag-annotator = "main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["rosbag_annotator*"]
