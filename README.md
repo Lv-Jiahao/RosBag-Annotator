@@ -2,7 +2,7 @@
 
 ROS2 数据包可视化切分与标注工具，面向 VLA（Vision-Language-Action）多任务训练数据准备。
 
-![](/home/xw/Pictures/截图/截图 2026-04-10 18-12-53.png)
+![](./images/pic.png)
 
 ---
 
