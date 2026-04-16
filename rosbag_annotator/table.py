@@ -1,10 +1,10 @@
 """
 SegmentTable — QTableWidget for segment metadata editing.
 
-Columns: #, Start, End, Duration, Prompt, Output Directory
+Columns: #, Task, Start, End, Duration, Prompt, Output Directory
 Double-click Prompt → inline editor
 Double-click Dir    → folder browser
-Right-click row     → context menu (delete / set dir / clear dir)
+Right-click row     → context menu (delete / assign task / set dir / clear dir)
 """
 from __future__ import annotations
 from pathlib import Path
@@ -25,24 +25,30 @@ class SegmentTable(QTableWidget):
     row_selected             = pyqtSignal(int)
     segment_delete_requested = pyqtSignal(int)
     out_dir_changed          = pyqtSignal(int, str)
+    # emitted when user requests "assign task" from context menu
+    # MainWindow opens the task picker and calls assign_task(row, task)
+    task_assign_requested    = pyqtSignal(int)
 
     _last_task_dir: str = ""
 
-    COLS       = ["#", "Start", "End", "Duration",
+    COLS       = ["#", "Task", "Start", "End", "Duration",
                   "Task Prompt / Description", "📁 任务目录"]
-    COL_PROMPT = 4
-    COL_DIR    = 5
+    COL_TASK   = 1
+    COL_PROMPT = 5
+    COL_DIR    = 6
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setColumnCount(len(self.COLS))
         self.setHorizontalHeaderLabels(self.COLS)
         hdr   = self.horizontalHeader()
-        modes = ([QHeaderView.ResizeMode.Fixed] * 4
-                 + [QHeaderView.ResizeMode.Stretch] * 2)
-        for c, m in enumerate(modes): hdr.setSectionResizeMode(c, m)
-        self.setColumnWidth(0, 32); self.setColumnWidth(1, 100)
-        self.setColumnWidth(2, 100); self.setColumnWidth(3, 80)
+        # #=fixed, Task=fixed, Start/End/Dur=fixed, Prompt=stretch, Dir=stretch
+        fixed_widths = [32, 90, 100, 100, 80]
+        for c, w in enumerate(fixed_widths):
+            hdr.setSectionResizeMode(c, QHeaderView.ResizeMode.Fixed)
+            self.setColumnWidth(c, w)
+        hdr.setSectionResizeMode(self.COL_PROMPT, QHeaderView.ResizeMode.Stretch)
+        hdr.setSectionResizeMode(self.COL_DIR,    QHeaderView.ResizeMode.Stretch)
         self.verticalHeader().setVisible(False)
         self.setAlternatingRowColors(True)
         self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -59,9 +65,12 @@ class SegmentTable(QTableWidget):
         self.setRowCount(len(segments))
         for i, s in enumerate(segments):
             self._set(i, 0, str(i+1), center=True)
-            self._set(i, 1, s.start_str())
-            self._set(i, 2, s.end_str())
-            self._set(i, 3, s.duration_str())
+            # COL_TASK: filled by assign_task() — show placeholder if empty
+            if not self.item(i, self.COL_TASK):
+                self._set_task_cell(i, "", QColor(88, 91, 112))
+            self._set(i, 2, s.start_str())
+            self._set(i, 3, s.end_str())
+            self._set(i, 4, s.duration_str())
             self._set(i, self.COL_PROMPT, s.prompt)
             self._set_dir_cell(i, s.out_dir)
             item = self.item(i, 0)
@@ -70,6 +79,23 @@ class SegmentTable(QTableWidget):
                 item.setForeground(QBrush(QColor(24, 24, 37)))
         self._lock = False
         if 0 <= sel < self.rowCount(): self.selectRow(sel)
+
+    def assign_task(self, row: int, task):
+        """Apply a Task's name, prompt, and out_dir to the given row."""
+        if not (0 <= row < self.rowCount()):
+            return
+        from .task_library import _TASK_COLORS   # avoid circular at module level
+        col = _TASK_COLORS[row % len(_TASK_COLORS)]
+        self._set_task_cell(row, task.name, col)
+        # prompt
+        if self.item(row, self.COL_PROMPT):
+            self.item(row, self.COL_PROMPT).setText(task.prompt)
+        else:
+            self._set(row, self.COL_PROMPT, task.prompt)
+        self.prompt_changed.emit(row, task.prompt)
+        # out_dir
+        self._set_dir_cell(row, task.out_dir)
+        self.out_dir_changed.emit(row, task.out_dir)
 
     def select_row(self, idx: int):
         self._lock = True; self.selectRow(idx); self._lock = False
@@ -95,13 +121,16 @@ class SegmentTable(QTableWidget):
     def contextMenuEvent(self, ev):
         row = self.rowAt(ev.pos().y())
         if row < 0: return
-        menu    = QMenu(self)
-        act_del = menu.addAction(f"🗑  删除分段 {row+1}  （与相邻段合并）")
-        act_dir = menu.addAction("📁  设置任务目录…")
-        act_clr = menu.addAction("✕  清除任务目录")
+        menu      = QMenu(self)
+        act_task  = menu.addAction(f"📚  从任务库分配  →  Segment {row+1}")
+        menu.addSeparator()
+        act_del   = menu.addAction(f"🗑  删除分段 {row+1}（与相邻段合并）")
+        act_dir   = menu.addAction("📁  手动设置输出目录…")
+        act_clr   = menu.addAction("✕  清除任务目录")
         res = menu.exec(ev.globalPos())
-        if   res == act_del: self.segment_delete_requested.emit(row)
-        elif res == act_dir: self._browse_out_dir(row)
+        if   res == act_task: self.task_assign_requested.emit(row)
+        elif res == act_del:  self.segment_delete_requested.emit(row)
+        elif res == act_dir:  self._browse_out_dir(row)
         elif res == act_clr:
             self._set_dir_cell(row, ""); self.out_dir_changed.emit(row, "")
 
@@ -118,6 +147,14 @@ class SegmentTable(QTableWidget):
         item = QTableWidgetItem(text)
         if center: item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setItem(row, col, item)
+
+    def _set_task_cell(self, row: int, name: str, color: QColor):
+        label = name if name else "—"
+        item  = QTableWidgetItem(label)
+        item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        item.setForeground(QBrush(color))
+        item.setToolTip(name or "右键 → 从任务库分配")
+        self.setItem(row, self.COL_TASK, item)
 
     def _set_dir_cell(self, row: int, path: str):
         short = Path(path).name if path else "(未设置)"
@@ -142,7 +179,10 @@ class SegmentTable(QTableWidget):
         if rows: self.row_selected.emit(rows[0].row())
 
     def _dbl_click(self, row: int, col: int):
-        if col == self.COL_PROMPT:
+        if col == self.COL_TASK:
+            # double-click on Task column → trigger task assignment via MainWindow
+            self.task_assign_requested.emit(row)
+        elif col == self.COL_PROMPT:
             cur  = (self.item(row, self.COL_PROMPT).text()
                     if self.item(row, self.COL_PROMPT) else "")
             text, ok = qinput_text(

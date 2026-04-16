@@ -1,5 +1,5 @@
 """
-Data models: Segment, BagMeta, BagAnnotation
+Data models: Task, Segment, BagMeta, BagAnnotation
 """
 from __future__ import annotations
 from dataclasses import dataclass, field
@@ -10,6 +10,27 @@ from typing import List
 def _is_image_type(t: str) -> bool:
     return "sensor_msgs" in t and "Image" in t
 
+
+# ── Task (pre-defined prompt + output directory pair) ─────────────────────────
+
+@dataclass
+class Task:
+    """A reusable (name, prompt, out_dir) tuple stored in the Task Library."""
+    name:    str
+    prompt:  str = ""
+    out_dir: str = ""
+
+    def to_dict(self) -> dict:
+        return {"name": self.name, "prompt": self.prompt, "out_dir": self.out_dir}
+
+    @staticmethod
+    def from_dict(d: dict) -> "Task":
+        return Task(name=d.get("name", ""),
+                    prompt=d.get("prompt", ""),
+                    out_dir=d.get("out_dir", ""))
+
+
+# ── Segment ───────────────────────────────────────────────────────────────────
 
 @dataclass
 class Segment:
@@ -28,6 +49,8 @@ class Segment:
     def start_str(self): return f"{self.start_ns/1e9:.3f}s"
     def end_str(self):   return f"{self.end_ns/1e9:.3f}s"
 
+
+# ── BagMeta ───────────────────────────────────────────────────────────────────
 
 @dataclass
 class BagMeta:
@@ -51,6 +74,8 @@ class BagMeta:
     def image_topics(self):
         return [t for t in self.topics if _is_image_type(t["type"])]
 
+
+# ── BagAnnotation ─────────────────────────────────────────────────────────────
 
 @dataclass
 class BagAnnotation:

@@ -91,6 +91,7 @@ class ExportWorker(QThread):
             writer.write(topic, data, ts)
         del writer, reader
 
+    # 基于ros2 的 filter
     @staticmethod
     def _export_cli(bag_path: str, seg, out_path: Path):
         cmd = ["ros2", "bag", "filter", bag_path, "-o", str(out_path),
@@ -99,6 +100,82 @@ class ExportWorker(QThread):
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
         if r.returncode != 0:
             raise RuntimeError(f"ros2 bag filter:\n{r.stderr}")
+
+    # @staticmethod
+    # def _export_cli(bag_path, seg, out_path):
+    #     """纯 Python SQLite 导出，无需 ros2 命令行。"""
+    #     import sqlite3
+    #     src = Path(bag_path)
+    #     out = Path(out_path)
+    #     out.mkdir(parents=True, exist_ok=True)
+
+    #     db3_files = sorted(src.glob("*.db3"))
+    #     if not db3_files:
+    #         raise RuntimeError("找不到 .db3 文件，仅支持 sqlite3 格式的 bag")
+
+    #     out_db = out / "output_0.db3"
+    #     conn_out = sqlite3.connect(str(out_db))
+    #     conn_out.execute(
+    #         "CREATE TABLE topics(id INTEGER PRIMARY KEY, name TEXT, type TEXT,"
+    #         " serialization_format TEXT, offered_qos_profiles TEXT)")
+    #     conn_out.execute(
+    #         "CREATE TABLE messages(id INTEGER PRIMARY KEY, topic_id INTEGER,"
+    #         " timestamp INTEGER, data BLOB)")
+    #     conn_out.execute("CREATE INDEX timestamp_idx ON messages (timestamp ASC)")
+
+    #     topic_id_map = {}
+    #     msg_rows = []
+
+    #     for db3 in db3_files:
+    #         conn_in = sqlite3.connect(f"file:{db3}?mode=ro", uri=True)
+    #         for row in conn_in.execute(
+    #                 "SELECT id, name, type, serialization_format, offered_qos_profiles FROM topics"):
+    #             key = (row[1], row[2])
+    #             if key not in topic_id_map:
+    #                 new_id = len(topic_id_map) + 1
+    #                 topic_id_map[key] = new_id
+    #                 conn_out.execute("INSERT INTO topics VALUES (?,?,?,?,?)",
+    #                                 (new_id, row[1], row[2], row[3], row[4]))
+    #             for ts, data in conn_in.execute(
+    #                     "SELECT timestamp, data FROM messages WHERE topic_id=?"
+    #                     " AND timestamp>=? AND timestamp<=?",
+    #                     (row[0], seg.start_ns, seg.end_ns)):
+    #                 msg_rows.append((topic_id_map[key], ts, data))
+    #         conn_in.close()
+
+    #     msg_rows.sort(key=lambda x: x[1])
+    #     conn_out.executemany(
+    #         "INSERT INTO messages(topic_id, timestamp, data) VALUES (?,?,?)", msg_rows)
+    #     conn_out.commit()
+    #     conn_out.close()
+
+    #     # 写 metadata.yaml
+    #     topics_info = []
+    #     conn_c = sqlite3.connect(str(out_db))
+    #     for tid, name, typ in conn_c.execute("SELECT id, name, type FROM topics"):
+    #         cnt = conn_c.execute(
+    #             "SELECT COUNT(*) FROM messages WHERE topic_id=?", (tid,)).fetchone()[0]
+    #         topics_info.append({
+    #             "topic_metadata": {"name": name, "type": typ,
+    #                             "serialization_format": "cdr",
+    #                             "offered_qos_profiles": ""},
+    #             "message_count": cnt})
+    #     total = conn_c.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
+    #     conn_c.close()
+
+    #     new_meta = {"rosbag2_bagfile_information": {
+    #         "version": 9, "storage_identifier": "sqlite3",
+    #         "duration": {"nanoseconds": seg.end_ns - seg.start_ns},
+    #         "starting_time": {"nanoseconds_since_epoch": seg.start_ns},
+    #         "message_count": total,
+    #         "topics_with_message_count": topics_info,
+    #         "files": [{"path": "output_0.db3",
+    #                 "starting_time": {"nanoseconds_since_epoch": seg.start_ns},
+    #                 "duration": {"nanoseconds": seg.end_ns - seg.start_ns},
+    #                 "message_count": total}],
+    #         "compression_format": "", "compression_mode": ""}}
+    #     with open(out / "metadata.yaml", "w", encoding="utf-8") as f:
+    #         yaml.dump(new_meta, f, allow_unicode=True, sort_keys=False)
 
     @staticmethod
     def _patch_yaml(seg, out_path: Path):

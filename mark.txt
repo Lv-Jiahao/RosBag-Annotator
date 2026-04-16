@@ -1,0 +1,4 @@
+1. At the pick-up position, both robotic arms work in coordination to grasp the aluminum foil from the material rack.
+2. With the aluminum foil held by both arms, transport it to the position above the blue mold fixture on the right side.
+3. Using the yellow locating pin as a reference,  and place the aluminum foil into the blue mold fixture on the right side.
+The chassis backs up from the placement position on the right side and returns to the initial pick-up position.

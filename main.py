@@ -22,6 +22,7 @@ def main():
     pal.setColor(QPalette.ColorRole.Highlight,       QColor(69,  71,  90))
     pal.setColor(QPalette.ColorRole.HighlightedText, QColor(205, 214, 244))
     app.setPalette(pal)
+    app.setStyleSheet(STYLE)   # app-level: covers all dialogs, not just MainWindow
 
     win = MainWindow()
     win.show()
